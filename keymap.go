@@ -1,6 +1,6 @@
 package main
 
-import "github.com/charmbracelet/bubbles/key"
+import "charm.land/bubbles/v2/key"
 
 type KeyMap struct {
 	Up                  key.Binding `category:"Navigation"`
@@ -34,6 +34,8 @@ type KeyMap struct {
 	ShowSelector        key.Binding `category:"View"`
 	GoBack              key.Binding `category:"Navigation"`
 	GoForward           key.Binding `category:"Navigation"`
+	JSONLNext           key.Binding `category:"Navigation"`
+	JSONLPrev           key.Binding `category:"Navigation"`
 	Help                key.Binding `category:"Other"`
 	CommandLine         key.Binding `category:"Other"`
 	Quit                key.Binding `category:"Other"`
@@ -53,7 +55,7 @@ func init() {
 			key.WithHelp("", "suspend program"),
 		),
 		PageDown: key.NewBinding(
-			key.WithKeys("pgdown", " ", "f"),
+			key.WithKeys("pgdown", "space", "f"),
 			key.WithHelp("pgdown, space, f", "page down"),
 		),
 		PageUp: key.NewBinding(
@@ -183,6 +185,14 @@ func init() {
 		GoForward: key.NewBinding(
 			key.WithKeys("]"),
 			key.WithHelp("", "go forward"),
+		),
+		JSONLNext: key.NewBinding(
+			key.WithKeys(","),
+			key.WithHelp("", "next JSONL record"),
+		),
+		JSONLPrev: key.NewBinding(
+			key.WithKeys("."),
+			key.WithHelp("", "previous JSONL record"),
 		),
 	}
 }

@@ -7,7 +7,8 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/colorprofile"
+	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
 
 	"github.com/antonmedv/fx/internal/jsonx"
@@ -417,7 +418,9 @@ func ThemeTester() {
 }
 
 func ExportThemes() {
-	lipgloss.SetColorProfile(termenv.ANSI256) // Export in Terminal.app compatible colors
+	w := colorprofile.NewWriter(os.Stdout, os.Environ())
+	w.Profile = colorprofile.ANSI256
+	lipgloss.Writer = w
 	placeholder := "_"
 	extract := func(b string) string {
 		matches := regexp.

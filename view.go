@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/antonmedv/fx/internal/ident"
 	. "github.com/antonmedv/fx/internal/jsonx"
@@ -12,51 +15,46 @@ import (
 	"github.com/antonmedv/fx/internal/utils"
 )
 
-func (m *model) View() string {
+func (m *model) View() tea.View {
 	if m.suspending {
-		return ""
+		return tea.NewView("")
 	}
 
 	if m.showHelp {
-		return m.help.View()
+		return tea.NewView(m.help.View())
 	}
 
 	if m.showPreview {
 		searchBar := m.previewSearchStatusBar()
 		if searchBar != "" {
-			return m.preview.View() + "\n" + searchBar
+			return tea.NewView(m.preview.View() + "\n" + searchBar)
 		}
 		statusBar := flex(m.termWidth, m.cursorPath(), m.fileName)
-		return m.preview.View() + "\n" + theme.CurrentTheme.StatusBar(statusBar)
+		return tea.NewView(m.preview.View() + "\n" + theme.CurrentTheme.StatusBar(statusBar))
 	}
 
 	var screen []byte
-	printedLines := 0
-	n := m.head
-
 	var cursorLineNumber int
 
-	for lineNumber := 0; lineNumber < m.viewHeight(); lineNumber++ {
-		if n == nil {
-			break
-		}
-
+	appendTreeLine := func(lineNumber int, n *Node) []byte {
+		var line []byte
 		if m.showLineNumbers {
 			lineNumbersWidth := len(strconv.Itoa(m.totalLines))
 			if n.LineNumber == 0 {
-				screen = append(screen, bytes.Repeat([]byte{' '}, lineNumbersWidth)...)
+				line = append(line, bytes.Repeat([]byte{' '}, lineNumbersWidth)...)
 			} else {
 				lineNumStr := fmt.Sprintf("%*d", lineNumbersWidth, n.LineNumber)
-				screen = append(screen, theme.CurrentTheme.LineNumber(lineNumStr)...)
+				line = append(line, theme.CurrentTheme.LineNumber(lineNumStr)...)
 			}
-			screen = append(screen, ' ', ' ')
+			line = append(line, ' ', ' ')
 		}
 
 		for i := 0; i < int(n.Depth); i++ {
-			screen = append(screen, ident.IdentBytes...)
+			line = append(line, ident.IdentBytes...)
 		}
 
-		isSelected := m.cursor == lineNumber
+		focusTree := !m.jsonlMode || !m.jsonlListFocus
+		isSelected := m.cursor == lineNumber && focusTree
 		if isSelected {
 			if n.LineNumber == 0 {
 				cursorLineNumber = n.Parent.LineNumber
@@ -72,45 +70,45 @@ func (m *model) View() string {
 		isRefSelected := false
 
 		if n.Key != "" {
-			screen = append(screen, m.prettyKey(n, isSelected)...)
-			screen = append(screen, theme.Colon...)
+			line = append(line, m.prettyKey(n, isSelected)...)
+			line = append(line, theme.Colon...)
 
 			_, isRef = isRefNode(n)
 			isRefSelected = isRef && isSelected
 			isSelected = false // don't highlight the key's value
 		}
 
-		screen = append(screen, m.prettyPrint(n, isSelected, isRef)...)
+		line = append(line, m.prettyPrint(n, isSelected, isRef)...)
 
 		if n.IsCollapsed() {
 			if n.Kind == Object {
 				if n.Collapsed.Key != "" {
-					screen = append(screen, theme.CurrentTheme.Preview(n.Collapsed.Key)...)
-					screen = append(screen, theme.ColonPreview...)
+					line = append(line, theme.CurrentTheme.Preview(n.Collapsed.Key)...)
+					line = append(line, theme.ColonPreview...)
 					if len(n.Collapsed.Value) > 0 &&
 						len(n.Collapsed.Value) < 42 &&
 						n.Collapsed.Kind != Object &&
 						n.Collapsed.Kind != Array {
-						screen = append(screen, theme.CurrentTheme.Preview(n.Collapsed.Value)...)
+						line = append(line, theme.CurrentTheme.Preview(n.Collapsed.Value)...)
 						if n.Size > 1 {
-							screen = append(screen, theme.CommaPreview...)
-							screen = append(screen, theme.Dot3...)
+							line = append(line, theme.CommaPreview...)
+							line = append(line, theme.Dot3...)
 						}
 					} else {
-						screen = append(screen, theme.Dot3...)
+						line = append(line, theme.Dot3...)
 					}
 				}
-				screen = append(screen, theme.CloseCurlyBracket...)
+				line = append(line, theme.CloseCurlyBracket...)
 			} else if n.Kind == Array {
-				screen = append(screen, theme.Dot3...)
-				screen = append(screen, theme.CloseSquareBracket...)
+				line = append(line, theme.Dot3...)
+				line = append(line, theme.CloseSquareBracket...)
 			}
 			if n.End != nil && n.End.Comma {
-				screen = append(screen, theme.Comma...)
+				line = append(line, theme.Comma...)
 			}
 		}
 		if n.Comma {
-			screen = append(screen, theme.Comma...)
+			line = append(line, theme.Comma...)
 		}
 
 		if m.showSizes && n.Size > 0 {
@@ -128,23 +126,54 @@ func (m *model) View() string {
 					w = "keys"
 				}
 			}
-			screen = append(screen, theme.CurrentTheme.Size(fmt.Sprintf(" (%d %s)", n.Size, w))...)
+			line = append(line, theme.CurrentTheme.Size(fmt.Sprintf(" (%d %s)", n.Size, w))...)
 		}
 
 		if isRefSelected {
-			screen = append(screen, theme.CurrentTheme.Preview("  ctrl+g goto")...)
+			line = append(line, theme.CurrentTheme.Preview("  ctrl+g goto")...)
 		}
 
-		screen = append(screen, '\n')
-		printedLines++
-		n = n.Next
+		return line
 	}
 
-	for i := printedLines; i < m.viewHeight(); i++ {
-		if m.eof {
-			screen = append(screen, theme.Empty...)
+	printedLines := 0
+	n := m.head
+
+	if m.jsonlMode && len(m.jsonlRoots) > 0 {
+		for lineNumber := 0; lineNumber < m.viewHeight(); lineNumber++ {
+			left := m.jsonlLeftLineBytes(lineNumber)
+			screen = append(screen, left...)
+			screen = append(screen, theme.CurrentTheme.StatusBar("│")...)
+			if n == nil {
+				if m.eof {
+					screen = append(screen, theme.Empty...)
+				}
+				screen = append(screen, '\n')
+				printedLines++
+				continue
+			}
+			screen = append(screen, appendTreeLine(lineNumber, n)...)
+			screen = append(screen, '\n')
+			printedLines++
+			n = n.Next
 		}
-		screen = append(screen, '\n')
+	} else {
+		for lineNumber := 0; lineNumber < m.viewHeight(); lineNumber++ {
+			if n == nil {
+				break
+			}
+			screen = append(screen, appendTreeLine(lineNumber, n)...)
+			screen = append(screen, '\n')
+			printedLines++
+			n = n.Next
+		}
+
+		for i := printedLines; i < m.viewHeight(); i++ {
+			if m.eof {
+				screen = append(screen, theme.Empty...)
+			}
+			screen = append(screen, '\n')
+		}
 	}
 
 	if m.gotoSymbolInput.Focused() && m.fuzzyMatch != nil {
@@ -177,6 +206,9 @@ func (m *model) View() string {
 		}
 
 		info := fmt.Sprintf("%s %s", indicator, m.fileName)
+		if m.jsonlMode && len(m.jsonlRoots) > 0 {
+			info = fmt.Sprintf("%s | %s", m.jsonlStatusHint(), info)
+		}
 		statusBar := flex(statusBarWidth, m.cursorPath(), info)
 		screen = append(screen, theme.CurrentTheme.StatusBar(statusBar)...)
 	}
@@ -216,7 +248,13 @@ func (m *model) View() string {
 		}
 	}
 
-	return string(screen)
+	s := string(screen)
+	v := tea.NewView(s)
+	v.AltScreen = true
+	if _, noMouse := os.LookupEnv("FX_NO_MOUSE"); !noMouse {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
+	return v
 }
 
 func (m *model) centerLine(n *Node) {

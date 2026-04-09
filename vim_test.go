@@ -4,110 +4,116 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/exp/teatest"
-	"github.com/muesli/termenv"
-)
+	tea "charm.land/bubbletea/v2"
 
-func init() {
-	lipgloss.SetColorProfile(termenv.ANSI)
-}
+	"github.com/antonmedv/fx/internal/teatest"
+)
 
 func TestGotoLine(t *testing.T) {
 	tm := prepare(t, options{showLineNumbers: true})
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(keyRune(':'))
+	for _, msg := range keyStr("5") {
+		tm.Send(msg)
+	}
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 
 func TestGotoLineCollapsed(t *testing.T) {
 	tm := prepare(t, options{showLineNumbers: true})
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	tm.Send(keyRune('E'))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("5")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(keyRune(':'))
+	for _, msg := range keyStr("5") {
+		tm.Send(msg)
+	}
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 
 func TestGotoLineInputInvalid(t *testing.T) {
 	tm := prepare(t, options{showLineNumbers: true})
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("E")})
+	tm.Send(keyRune('E'))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("invalid")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(keyRune(':'))
+	for _, msg := range keyStr("invalid") {
+		tm.Send(msg)
+	}
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 
 func TestGotoLineInputGreaterThanTotalLines(t *testing.T) {
 	tm := prepare(t, options{showLineNumbers: true})
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("500")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(keyRune(':'))
+	for _, msg := range keyStr("500") {
+		tm.Send(msg)
+	}
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 
 func TestGotoLineInputLessThanOne(t *testing.T) {
 	tm := prepare(t, options{showLineNumbers: true})
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("-2")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(keyRune(':'))
+	tm.Send(keyRune('-'))
+	tm.Send(keyRune('2'))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 
 func TestGotoLineKeepsHistory(t *testing.T) {
 	tm := prepare(t, options{showLineNumbers: true})
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(keyRune(':'))
+	tm.Send(keyRune('4'))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(":")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("14")})
-	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	tm.Send(keyRune(':'))
+	for _, msg := range keyStr("14") {
+		tm.Send(msg)
+	}
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("[")})
+	tm.Send(keyRune('['))
 
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }

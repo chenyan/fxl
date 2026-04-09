@@ -1,40 +1,40 @@
-[?25l[?2004h[90m 1[0m  {[K
-[90m 2[0m    "title": "Lorem ipsum",[K
-[90m 3[0m    "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do e
-      [7miusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad mini[0m
-      m veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea 
-      commodo consequat. Duis aute irure dolor in reprehenderit in voluptate vel
-      it esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cu
-      pidatat non proident, sunt in culpa qui officia deserunt mollit anim id es
-      t laborum.",[K
-[90m 4[0m    "tags": […],[K
-[90m 9[0m    "year": 3000,[K
-[90m10[0m    "funny": true,[K
-[90m11[0m    "author": {"name":"John Doe",…}[K
-[90m15[0m  }[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-~[K
-.text                                                                       20% [80D
+[?2026$p[?2027$p[>4m[=0;1u[?1049h[?25l[?2004h[?1002h[?1006h[>4;2m[=1;1u[?u[H[2J 1  {
+ 2    "title": "Lorem ipsum",
+ 3    "text": "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do e
+[6Ciusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad mini
+[6Cm veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea
+[6Ccommodo consequat. Duis aute irure dolor in reprehenderit in voluptate vel
+[6Cit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cu
+[6Cpidatat non proident, sunt in culpa qui officia deserunt mollit anim id es
+[6Ct laborum.",
+ 4    "tags": […],
+ 9    "year": 3000,
+10    "funny": true,
+11    "author": {"name":"John Doe",…}
+15  }
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+~
+.text                                                                       20%

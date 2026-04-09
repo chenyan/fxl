@@ -7,18 +7,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/exp/teatest"
-	"github.com/muesli/termenv"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/colorprofile"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/antonmedv/fx/internal/jsonx"
+	"github.com/antonmedv/fx/internal/teatest"
 )
 
 func init() {
-	lipgloss.SetColorProfile(termenv.ANSI)
+	w := colorprofile.NewWriter(io.Discard, nil)
+	w.Profile = colorprofile.ANSI
+	lipgloss.Writer = w
 }
 
 type options struct {
@@ -75,43 +77,55 @@ func read(t *testing.T, tm *teatest.TestModel) []byte {
 	return out
 }
 
+func keyRune(r rune) tea.Msg {
+	return tea.KeyPressMsg(tea.Key{Text: string(r), Code: r})
+}
+
+func keyStr(s string) []tea.Msg {
+	ms := make([]tea.Msg, 0, len(s))
+	for _, r := range s {
+		ms = append(ms, keyRune(r))
+	}
+	return ms
+}
+
 func TestOutput(t *testing.T) {
 	tm := prepare(t)
 
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 
 func TestNavigation(t *testing.T) {
 	tm := prepare(t)
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
-	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 
 func TestCollapseRecursive(t *testing.T) {
 	tm := prepare(t)
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyShiftLeft})
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft, Mod: tea.ModShift}))
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }
 
 func TestCollapseRecursiveWithSizes(t *testing.T) {
 	tm := prepare(t, options{showSizes: true})
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyShiftLeft})
+	tm.Send(tea.KeyPressMsg(tea.Key{Code: tea.KeyLeft, Mod: tea.ModShift}))
 	teatest.RequireEqualOutput(t, read(t, tm))
 
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	tm.Send(keyRune('q'))
 	tm.WaitFinished(t, teatest.WithFinalTimeout(time.Second))
 }

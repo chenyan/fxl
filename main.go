@@ -16,13 +16,15 @@ import (
 	"strings"
 
 	"github.com/antonmedv/clipboard"
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/mattn/go-isatty"
+
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/antonmedv/fx/internal/complete"
 	"github.com/antonmedv/fx/internal/engine"
@@ -256,6 +258,8 @@ func main() {
 		showSizes = showSizesValue == "true" || showSizesValue == "yes" || showSizesValue == "on" || showSizesValue == "1"
 	}
 
+	jsonl := fileName != "" && strings.HasSuffix(strings.ToLower(fileName), ".jsonl")
+
 	m := &model{
 		suspending:          false,
 		showCursor:          true,
@@ -264,6 +268,7 @@ func main() {
 		showSizes:           showSizes,
 		showLineNumbers:     showLineNumbers,
 		fileName:            fileName,
+		jsonlMode:           jsonl,
 		gotoSymbolInput:     gotoSymbolInput,
 		commandInput:        commandInput,
 		searchInput:         searchInput,
@@ -273,18 +278,9 @@ func main() {
 		spinner:             spinnerModel,
 	}
 
-	lipgloss.SetColorProfile(theme.TermOutput.ColorProfile())
+	lipgloss.Writer = colorprofile.NewWriter(os.Stderr, os.Environ())
 
-	withMouse := tea.WithMouseCellMotion()
-	if _, ok := os.LookupEnv("FX_NO_MOUSE"); ok {
-		withMouse = tea.WithAltScreen()
-	}
-
-	p := tea.NewProgram(m,
-		tea.WithAltScreen(),
-		withMouse,
-		tea.WithOutput(os.Stderr),
-	)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 
 	go func() {
 		firstOk := false
@@ -365,6 +361,12 @@ type model struct {
 	keysIndexNodes        []*Node
 	fuzzyMatch            *fuzzy.Match
 	deletePending         bool
+
+	jsonlMode      bool
+	jsonlRoots     []*Node
+	jsonlIdx       int
+	jsonlListOff   int
+	jsonlListFocus bool
 }
 
 type location struct {
@@ -401,10 +403,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.termWidth = msg.Width
 		m.termHeight = msg.Height
-		m.help.Width = m.termWidth
-		m.help.Height = m.termHeight - 1
-		m.preview.Width = m.termWidth
-		m.preview.Height = m.termHeight - 1
+		m.help.SetWidth(m.termWidth)
+		m.help.SetHeight(m.termHeight - 1)
+		m.preview.SetWidth(m.termWidth)
+		m.preview.SetHeight(m.termHeight - 1)
 		Wrap(m.top, m.viewWidth())
 		m.redoSearch()
 
@@ -417,11 +419,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case nodeMsg:
-		if m.wrap {
-			Wrap(msg.node, m.viewWidth())
-		}
 		if m.collapsed {
 			msg.node.CollapseRecursively()
+		}
+		if m.jsonlMode {
+			msg.node.Index = -1
+			m.jsonlRoots = append(m.jsonlRoots, msg.node)
+			m.applyJSONLView()
+			return m, nil
+		}
+		if m.wrap {
+			Wrap(msg.node, m.viewWidth())
 		}
 		m.totalLines = msg.node.Bottom().LineNumber
 
@@ -485,18 +493,47 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
-	case tea.MouseMsg:
+	case tea.MouseWheelMsg:
 		m.handlePendingDelete(msg)
-
-		switch {
-		case msg.Button == tea.MouseButtonWheelUp:
+		mouse := msg.Mouse()
+		if m.jsonlMode && len(m.jsonlRoots) > 0 && mouse.X < m.jsonlLeftWidth() {
+			switch mouse.Button {
+			case tea.MouseWheelUp:
+				if m.jsonlIdx > 0 {
+					m.jsonlIdx--
+					m.applyJSONLView()
+					m.recordHistory()
+				}
+			case tea.MouseWheelDown:
+				if m.jsonlIdx < len(m.jsonlRoots)-1 {
+					m.jsonlIdx++
+					m.applyJSONLView()
+					m.recordHistory()
+				}
+			}
+			return m, nil
+		}
+		switch mouse.Button {
+		case tea.MouseWheelUp:
 			m.up()
-
-		case msg.Button == tea.MouseButtonWheelDown:
+		case tea.MouseWheelDown:
 			m.down()
+		}
 
-		case msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress:
+	case tea.MouseClickMsg:
+		m.handlePendingDelete(msg)
+		if msg.Button == tea.MouseLeft {
 			m.showCursor = true
+			if m.jsonlMode && len(m.jsonlRoots) > 0 && msg.X < m.jsonlLeftWidth() && msg.Y < m.viewHeight() {
+				i := m.jsonlListOff + msg.Y
+				if i < len(m.jsonlRoots) {
+					m.jsonlIdx = i
+					m.applyJSONLView()
+					m.jsonlListFocus = true
+					m.recordHistory()
+				}
+				return m, nil
+			}
 			if msg.Y < m.viewHeight() {
 				if m.cursor == msg.Y {
 					to, ok := m.cursorPointsTo()
@@ -529,7 +566,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.commandInput.Focused() {
 			return m.handleGotoLineKey(msg)
 		}
@@ -552,7 +589,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) handleHelpKey(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	if msg, ok := msg.(tea.KeyMsg); ok {
+	if msg, ok := msg.(tea.KeyPressMsg); ok {
 		switch {
 		case key.Matches(msg, keyMap.Quit), key.Matches(msg, keyMap.Help):
 			m.showHelp = false
@@ -562,15 +599,15 @@ func (m *model) handleHelpKey(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *model) handleGotoLineKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleGotoLineKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	switch {
-	case msg.Type == tea.KeyEscape:
+	switch msg.String() {
+	case "esc":
 		m.commandInput.Blur()
 		m.commandInput.SetValue("")
 		m.showCursor = true
 
-	case msg.Type == tea.KeyEnter:
+	case "enter":
 		m.commandInput.Blur()
 		command := m.commandInput.Value()
 		m.commandInput.SetValue("")
@@ -582,17 +619,17 @@ func (m *model) handleGotoLineKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleSearchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	switch {
-	case msg.Type == tea.KeyEscape:
+	switch msg.String() {
+	case "esc":
 		m.cancelSearch()
 		m.search = newSearch()
 		m.searchInput.Blur()
 		m.searchInput.SetValue("")
 		m.showCursor = true
 
-	case msg.Type == tea.KeyEnter:
+	case "enter":
 		m.searchInput.Blur()
 		m.cancelSearch()
 		m.search = newSearch()
@@ -604,10 +641,10 @@ func (m *model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *model) handleGotoSymbolKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleGotoSymbolKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	switch msg.Type {
-	case tea.KeyEscape, tea.KeyEnter, tea.KeyUp, tea.KeyDown:
+	switch msg.String() {
+	case "esc", "enter", "up", "down":
 		m.gotoSymbolInput.Blur()
 		m.gotoSymbolInput.SetValue("")
 		m.recordHistory()
@@ -622,18 +659,18 @@ func (m *model) handleGotoSymbolKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	switch msg.Type {
-	case tea.KeyUp:
+	switch msg.String() {
+	case "up":
 		m.up()
 
-	case tea.KeyDown:
+	case "down":
 		m.down()
 	}
 
 	return m, cmd
 }
 
-func (m *model) handleYankKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleYankKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, yankPath):
 		_ = clipboard.WriteAll(m.cursorPath())
@@ -651,7 +688,7 @@ func (m *model) handleYankKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) handleShowSelectorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleShowSelectorKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, showSizes):
 		m.showSizes = !m.showSizes
@@ -666,7 +703,7 @@ func (m *model) handleShowSelectorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) handlePendingDelete(msg tea.Msg) {
 	// Handle potential 'dd' sequence for delete
 	if m.deletePending {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			if key.Matches(keyMsg, keyMap.Delete) {
 				m.deleteAtCursor()
 				m.deletePending = true
@@ -677,7 +714,11 @@ func (m *model) handlePendingDelete(msg tea.Msg) {
 	}
 }
 
-func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if ok, mm, cmd := m.handleJSONLKey(msg); ok {
+		return mm, cmd
+	}
+
 	m.handlePendingDelete(msg)
 
 	switch {
@@ -913,7 +954,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keyMap.GotoSymbol):
 		m.gotoSymbolInput.CursorEnd()
-		m.gotoSymbolInput.Width = m.termWidth - 2 // -1 for the prompt, -1 for the cursor
+		m.gotoSymbolInput.SetWidth(m.termWidth - 2) // -1 for the prompt, -1 for the cursor
 		m.gotoSymbolInput.Focus()
 		m.createKeysIndex()
 
@@ -933,12 +974,12 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, keyMap.CommandLine):
 		m.commandInput.CursorEnd()
-		m.commandInput.Width = m.termWidth - 2 // -1 for the prompt, -1 for the cursor
+		m.commandInput.SetWidth(m.termWidth - 2) // -1 for the prompt, -1 for the cursor
 		m.commandInput.Focus()
 
 	case key.Matches(msg, keyMap.Search):
 		m.searchInput.CursorEnd()
-		m.searchInput.Width = m.termWidth - 2 // -1 for the prompt, -1 for the cursor
+		m.searchInput.SetWidth(m.termWidth - 2) // -1 for the prompt, -1 for the cursor
 		m.searchInput.Focus()
 
 	case key.Matches(msg, keyMap.SearchNext):
@@ -1170,6 +1211,12 @@ func (m *model) viewWidth() int {
 	if m.showLineNumbers {
 		width -= len(strconv.Itoa(m.totalLines))
 		width -= 2 // For margin between line numbers and JSON.
+	}
+	if m.jsonlMode {
+		width -= m.jsonlLeftWidth() + 1 // list column + separator
+		if width < 8 {
+			width = 8
+		}
 	}
 	return width
 }
