@@ -1,5 +1,7 @@
 # f(x)
 
+Terminal JSON viewer powered by **Bubble Tea v2** (with **bubbles** and **lipgloss**). Recent work adds **JSONL** viewing: a navigable list on the left and the full formatted JSON for the selected record on the right—handy for line-delimited logs and data pipelines. Terminal handling and mouse support are improved; JSONL navigation uses **`,`** and **`.`**; line numbers and view rendering are refined.
+
 <p align="center"><a href="https://fx.wtf"><img src=".github/images/preview.gif" width="500" alt="fx preview"></a></p>
 
 ## Documentation
